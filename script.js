@@ -1083,20 +1083,21 @@ async function submitImport() {
                     return;
                 }
 
-                const trs = table.querySelectorAll('tbody tr');
+                const trs = table.querySelectorAll('tr'); // Bỏ tbody đi để chắc chắn lấy được tr
                 let newSemesters = [];
                 let currentSem = null;
 
                 trs.forEach(tr => {
                     const tds = tr.querySelectorAll('td, th');
                     const text = tr.textContent.trim();
-                    const isSemesterMatch = /HK\s*\d+/i.test(text) || /Học kỳ/i.test(text);
                     
-                    // Dòng chứa tên học kỳ (Thường có class 'row-head', 'title-hk-diem' hoặc chỉ có 1 cột chứa chữ 'HK' hoặc 'Học kỳ')
+                    // Phát hiện chính xác dòng bắt đầu bằng HK hoặc Học kỳ (Ví dụ: "HK1 (2024 - 2025)")
+                    const isSemesterMatch = /^HK\s*\d+/i.test(text) || /^Học kỳ/i.test(text);
+                    
                     const isSemesterRow = tr.classList.contains('row-head') || 
                                           tr.classList.contains('title-hk-diem') || 
                                           tr.classList.contains('title-hk') ||
-                                          (tds.length === 1 && isSemesterMatch);
+                                          isSemesterMatch; // Nếu text bắt đầu bằng Học kỳ hoặc HK thì chắc chắn là dòng học kỳ
 
                     if (isSemesterRow) {
                         currentSem = {
