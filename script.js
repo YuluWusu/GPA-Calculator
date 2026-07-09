@@ -1088,25 +1088,32 @@ async function submitImport() {
                 let currentSem = null;
 
                 trs.forEach(tr => {
-                    // Dòng chứa tên học kỳ (Ví dụ: HK1 (2024 - 2025))
-                    if (tr.classList.contains('row-head')) {
-                        const semName = tr.textContent.trim();
+                    const tds = tr.querySelectorAll('td, th');
+                    const text = tr.textContent.trim();
+                    
+                    // Dòng chứa tên học kỳ (Thường có class 'row-head', 'title-hk-diem' hoặc chỉ có 1 cột chứa chữ 'Học kỳ')
+                    const isSemesterRow = tr.classList.contains('row-head') || 
+                                          tr.classList.contains('title-hk-diem') || 
+                                          tr.classList.contains('title-hk') ||
+                                          (tds.length === 1 && text.toLowerCase().includes('học kỳ'));
+
+                    if (isSemesterRow) {
                         currentSem = {
                             id: Date.now() + Math.random(),
-                            name: semName,
+                            name: text,
                             courses: []
                         };
                         newSemesters.push(currentSem);
                     } 
-                    // Dòng chứa môn học (có chứa td có thuộc tính title="DiemTongKet" hoặc có STT)
-                    else if (currentSem && tr.querySelector('td:nth-child(3)')) {
+                    // Dòng chứa môn học (có từ 5 cột trở lên)
+                    else if (currentSem && tds.length >= 5) {
                         const nameTd = tr.querySelector('td:nth-child(3)');
                         const creditTd = tr.querySelector('td:nth-child(4)');
                         
-                        // Lấy td bằng title
-                        const qtTd = tr.querySelector('td[title="DiemTBThuongKy"]');
-                        const ckTd = tr.querySelector('td[title="DiemThi"]');
-                        const finalTd = tr.querySelector('td[title="DiemTongKet"]');
+                        // Lấy td bằng title (Chuẩn PSC UIS)
+                        const qtTd = tr.querySelector('td[title="DiemTBThuongKy"]') || tr.querySelector('td[title="Điểm quá trình"]');
+                        const ckTd = tr.querySelector('td[title="DiemThi"]') || tr.querySelector('td[title="Điểm thi"]');
+                        const finalTd = tr.querySelector('td[title="DiemTongKet"]') || tr.querySelector('td[title="Điểm tổng kết"]');
 
                         if (!nameTd || !creditTd) return;
 
