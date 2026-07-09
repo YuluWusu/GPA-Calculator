@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Công cụ tính GPA</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="Logo HUIT-01.ico">
+    <link rel="stylesheet" href="responsive.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+                <img src="140.png" alt="logo" style="width: 60px;">
+                <h1> Công cụ tính GPA</h1>
+            <p class="subtitle">Theo dõi điểm trung bình học kỳ và tổng thể.</p>
+        </header>
+        
+        <div class="actions-bar">
+            <div class="controls">
+                <button class="btn btn-primary" onclick="addSemester()">
+                    <span class="btn-icon">+</span> Thêm học kỳ
+                </button>
+
+                <button class="btn btn-warning" onclick="exportData()">
+                    <span class="btn-icon">📥</span> Xuất dữ liệu
+                </button>
+                <button class="btn btn-primary" style="background-color: #8338ec;" onclick="openImportModal()">
+                    <span class="btn-icon">🔄</span> Tự động tải điểm
+                </button>
+                <button class="btn btn-danger" onclick="clearAllData()">
+                    <span class="btn-icon">🗑️</span> Xóa tất cả
+                </button>
+            </div>
+        </div>
+        
+        <div class="dashboard">
+            <div class="semesters-container" id="semesters-container">
+                <!-- Các học kỳ sẽ được hiển thị ở đây -->
+            </div>
+            
+            <div class="summary-card">
+                <h2 class="summary-title">Tổng quan</h2>
+                
+                <div class="summary-item">
+                    <span class="summary-label">Tổng số học kỳ:</span>
+                    <span class="summary-value" id="total-semesters">0</span>
+                </div>
+                
+                <div class="summary-item">
+                    <span class="summary-label">Tổng số môn học:</span>
+                    <span class="summary-value" id="total-courses">0</span>
+                </div>
+                
+                <div class="summary-item">
+                    <span class="summary-label">Tổng số tín chỉ:</span>
+                    <span class="summary-value" id="total-credits">0</span>
+                </div>
+                
+                <div class="total-gpa">
+                    GPA Tổng thể: <span id="overall-gpa">0.00</span>
+                </div>
+                <div class="total-gpa">
+                    Điểm Tổng thể: <span id="overall-score">0.00</span>
+                </div>
+                <div class="grade-scale">
+                    <h3>Thang điểm GPA</h3>
+                    <table>
+                        <tr>
+                            <th>Điểm GPA</th>
+                            <th>Xếp Loại</th>
+                        </tr>
+                        <tr>
+                            <td>3.60 - 4.00</td>
+                            <td><span class="gpa-badge gpa-excellent">Xuất sắc</span></td>
+                        </tr>
+                        <tr>
+                            <td>3.20 - 3.59</td>
+                            <td><span class="gpa-badge gpa-good">Giỏi</span></td>
+                        </tr>
+                        <tr>
+                            <td>2.50 - 3.19</td>
+                            <td><span class="gpa-badge gpa-average">Khá</span></td>
+                        </tr>
+                        <tr>
+                            <td>2.00 - 2.49</td>
+                            <td><span class="gpa-badge gpa-below-average">Trung bình</span></td>
+                        </tr>
+                        <tr>
+                            <td>Dưới 2.00</td>
+                            <td><span class="gpa-badge gpa-poor">Yếu</span></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Công cụ tính GPA &copy; 2026 - Hoàng Xuân Phi Long lớp 15DHTH01</p>
+        </div>
+
+        <!-- Modal Welcome -->
+        <div id="welcome-modal" class="modal">
+            <div class="modal-content" style="text-align: center;">
+                <span class="close-modal" onclick="closeWelcomeModal()">&times;</span>
+                <h2 style="color: var(--secondary); margin-bottom: 20px;">Chào mừng bạn đến với Công cụ tính GPA!</h2>
+                <p style="margin-bottom: 25px; color: var(--gray); font-size: 1rem;">
+                    Bạn muốn nhập điểm bằng cách nào?
+                </p>
+                <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                    <button class="btn btn-light" onclick="closeWelcomeModal()" style="flex: 1; min-width: 150px; padding: 15px;">
+                        <span class="btn-icon">📝</span> Nhập liệu thủ công
+                    </button>
+                    <button class="btn btn-primary" onclick="switchToImportModal()" style="flex: 1; min-width: 150px; background-color: #8338ec; padding: 15px;">
+                        <span class="btn-icon">🔄</span> Lấy điểm tự động (HUIT)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Tự động tải điểm -->
+        <div id="import-modal" class="modal">
+            <div class="modal-content">
+                <span class="close-modal" onclick="closeImportModal()">&times;</span>
+                <h2 style="color: var(--secondary); margin-bottom: 20px;">Tự động lấy điểm HUIT</h2>
+                <p style="margin-bottom: 15px; color: var(--gray); font-size: 0.9rem;">
+                    Nhập mã số sinh viên và mã Captcha để lấy thông tin điểm các học kỳ tự động.
+                </p>
+                <div class="form-group">
+                    <label for="import-mssv">Mã số sinh viên (MSSV)</label>
+                    <input type="text" id="import-mssv" class="course-input" placeholder="Ví dụ: 200121... " required>
+                </div>
+                <div class="form-group captcha-group">
+                    <label for="import-captcha">Mã Captcha</label>
+                    <div class="captcha-container">
+                        <input type="text" id="import-captcha" class="course-input" placeholder="Nhập mã Captcha..." required>
+                        <img id="captcha-img" src="" alt="Captcha Image" onclick="refreshCaptcha()" title="Bấm để tải lại Captcha">
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-primary" onclick="submitImport()" style="width: 100%;">
+                        <span class="btn-icon">🔄</span> Tải Dữ Liệu
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <script src="script.js"></script></body>
+</html>
