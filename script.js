@@ -628,8 +628,18 @@ function updateSummary() {
 
     updateOverallInfo();
     
+    // Render the currently active chart tab
     if (typeof renderChart === 'function') {
-        renderChart();
+        if (activeChartTab === 'dist') {
+            renderDistChart();
+        } else {
+            renderChart();
+        }
+    }
+    
+    // Evaluate and render achievement badges
+    if (typeof evaluateBadges === 'function') {
+        evaluateBadges();
     }
 }
 
@@ -1257,80 +1267,360 @@ window.onclick = function (event) {
     }
 }
 
-// ---------------- GPA CHART ---------------- //
+// ============================================================
+// SECTION: CHARTS (GPA Trend + Grade Distribution)
+// ============================================================
 let gpaChart = null;
+let distChart = null;
+let activeChartTab = 'trend';
+
+// Helper: tính GPA hệ 4 từ điểm 10
+function calculateGpaScale4(score) {
+    const info = getGradeInfo(validateScore(score));
+    return info.gpa4;
+}
+
+function switchChartTab(tab) {
+    activeChartTab = tab;
+    const trendBtn = document.getElementById('tab-trend');
+    const distBtn = document.getElementById('tab-dist');
+    const trendWrap = document.getElementById('chart-trend-wrapper');
+    const distWrap = document.getElementById('chart-dist-wrapper');
+    if (!trendBtn) return;
+
+    if (tab === 'trend') {
+        trendBtn.classList.add('chart-tab-active');
+        distBtn.classList.remove('chart-tab-active');
+        trendWrap.style.display = '';
+        distWrap.style.display = 'none';
+        renderChart();
+    } else {
+        distBtn.classList.add('chart-tab-active');
+        trendBtn.classList.remove('chart-tab-active');
+        trendWrap.style.display = 'none';
+        distWrap.style.display = '';
+        renderDistChart();
+    }
+}
 
 function renderChart() {
     const ctx = document.getElementById('gpaTrendChart');
     if (!ctx) return;
-    
-    // Nếu chưa có dữ liệu hoặc chart.js chưa tải
     if (!data || data.length === 0 || typeof Chart === 'undefined') {
-        if(gpaChart) {
-            gpaChart.destroy();
-            gpaChart = null;
-        }
+        if (gpaChart) { gpaChart.destroy(); gpaChart = null; }
         return;
     }
 
-    // Lấy nhãn (tên học kỳ) và dữ liệu (gpa)
     const labels = data.map(sem => sem.name);
     const gpaData = data.map(sem => {
-        let totalSemGpa = 0;
-        let totalSemCredits = 0;
+        let totalPts = 0, totalCr = 0;
         sem.courses.forEach(c => {
-            if (c.finalScore >= 0) {
-                totalSemGpa += calculateGpaScale4(c.finalScore) * c.credit;
-                totalSemCredits += c.credit;
-            }
+            const cr = validateCredit(c.credit);
+            totalPts += calculateGpaScale4(c.finalScore) * cr;
+            totalCr += cr;
         });
-        return totalSemCredits > 0 ? (totalSemGpa / totalSemCredits).toFixed(2) : 0;
+        return totalCr > 0 ? parseFloat((totalPts / totalCr).toFixed(2)) : 0;
     });
 
-    if (gpaChart) {
-        gpaChart.destroy();
-    }
+    if (gpaChart) { gpaChart.destroy(); }
 
     gpaChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: labels,
-            datasets: [{
-                label: 'GPA Học Kỳ (Hệ 4.0)',
-                data: gpaData,
-                borderColor: '#8338ec',
-                backgroundColor: 'rgba(131, 56, 236, 0.1)',
-                borderWidth: 3,
-                pointBackgroundColor: '#8338ec',
-                pointRadius: 5,
-                fill: true,
-                tension: 0.3
-            }]
+            labels,
+            datasets: [
+                {
+                    label: 'GPA Học Kỳ',
+                    data: gpaData,
+                    borderColor: '#8338ec',
+                    backgroundColor: 'rgba(131,56,236,0.10)',
+                    borderWidth: 3,
+                    pointBackgroundColor: gpaData.map(v => v >= 3.6 ? '#f8961e' : v >= 3.2 ? '#4cc9f0' : v >= 2.5 ? '#4361ee' : '#f72585'),
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                    fill: true,
+                    tension: 0.35
+                },
+                {
+                    label: 'Ngưỡng Giỏi (3.2)',
+                    data: labels.map(() => 3.2),
+                    borderColor: 'rgba(76,201,240,0.5)',
+                    borderWidth: 1.5,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: {
-                    min: 0,
-                    max: 4,
-                    ticks: {
-                        stepSize: 0.5
-                    }
-                }
+                y: { min: 0, max: 4, ticks: { stepSize: 0.5 }, grid: { color: '#f0f0f0' } },
+                x: { grid: { display: false } }
             },
             plugins: {
-                legend: {
-                    display: false
-                },
+                legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        label: function(context) {
-                            return `GPA: ${context.parsed.y}`;
-                        }
+                        label: ctx => `GPA: ${ctx.parsed.y}`
                     }
                 }
             }
         }
     });
 }
+
+function renderDistChart() {
+    const ctx = document.getElementById('gradeDistChart');
+    if (!ctx) return;
+
+    // Tính phân bổ tín chỉ theo nhóm điểm chữ
+    const groups = { A: 0, 'B+': 0, B: 0, 'C+': 0, C: 0, 'D+': 0, D: 0, F: 0 };
+    data.forEach(sem => sem.courses.forEach(c => {
+        const letter = getGradeInfo(validateScore(c.finalScore)).letter;
+        groups[letter] = (groups[letter] || 0) + validateCredit(c.credit);
+    }));
+
+    // Gộp thành 5 nhóm lớn: A, B(B+B), C(C+C), D(D+D), F
+    const merged = {
+        'A (≥8.5)': groups['A'],
+        'B (7.0-8.4)': (groups['B+'] || 0) + (groups['B'] || 0),
+        'C (5.5-6.9)': (groups['C+'] || 0) + (groups['C'] || 0),
+        'D (4.0-5.4)': (groups['D+'] || 0) + (groups['D'] || 0),
+        'F (<4.0)': groups['F'] || 0
+    };
+
+    const labels = Object.keys(merged);
+    const values = Object.values(merged);
+    const colors = ['#27ae60', '#4361ee', '#f8961e', '#f4a261', '#f72585'];
+
+    if (distChart) { distChart.destroy(); }
+
+    distChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                backgroundColor: colors,
+                borderColor: '#fff',
+                borderWidth: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { font: { size: 11 }, padding: 10, boxWidth: 12 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.label}: ${ctx.parsed} TC`
+                    }
+                }
+            }
+        }
+    });
+}
+
+// ============================================================
+// SECTION: GAMIFICATION — BADGES
+// ============================================================
+const BADGE_DEFINITIONS = [
+    {
+        id: 'excellent_overall',
+        emoji: '🏆',
+        name: 'Xuất sắc toàn khóa',
+        desc: 'GPA tổng ≥ 3.6',
+        check: () => {
+            const gpa = parseFloat(calculateOverallGPA().replace(',', '.'));
+            return gpa >= 3.6;
+        }
+    },
+    {
+        id: 'good_student',
+        emoji: '🥇',
+        name: 'Sinh viên Giỏi',
+        desc: 'GPA tổng ≥ 3.2',
+        check: () => {
+            const gpa = parseFloat(calculateOverallGPA().replace(',', '.'));
+            return gpa >= 3.2;
+        }
+    },
+    {
+        id: 'improving_3sem',
+        emoji: '📈',
+        name: 'Tiến bộ liên tục',
+        desc: 'GPA tăng 3 HK liên tiếp',
+        check: () => {
+            if (data.length < 3) return false;
+            const gpas = data.map(sem => {
+                let tp = 0, tc = 0;
+                sem.courses.forEach(c => { tp += calculateGpaScale4(c.finalScore) * validateCredit(c.credit); tc += validateCredit(c.credit); });
+                return tc > 0 ? tp / tc : 0;
+            });
+            for (let i = gpas.length - 1; i >= 2; i--) {
+                if (gpas[i] > gpas[i-1] && gpas[i-1] > gpas[i-2]) return true;
+            }
+            return false;
+        }
+    },
+    {
+        id: 'blazing_semester',
+        emoji: '🔥',
+        name: 'HK bùng cháy',
+        desc: 'Có ≥1 học kỳ GPA ≥ 3.6',
+        check: () => data.some(sem => {
+            let tp = 0, tc = 0;
+            sem.courses.forEach(c => { tp += calculateGpaScale4(c.finalScore) * validateCredit(c.credit); tc += validateCredit(c.credit); });
+            return tc > 0 && tp / tc >= 3.6;
+        })
+    },
+    {
+        id: 'no_f',
+        emoji: '💎',
+        name: 'Không có môn F',
+        desc: 'Không môn nào < 4 điểm',
+        check: () => data.every(sem => sem.courses.every(c => validateScore(c.finalScore) >= 4.0))
+            && data.some(sem => sem.courses.length > 0)
+    },
+    {
+        id: 'credit_100',
+        emoji: '🎯',
+        name: 'Chinh phục 100 TC',
+        desc: 'Tổng tín chỉ tích lũy ≥ 100',
+        check: () => {
+            let total = 0;
+            data.forEach(sem => sem.courses.forEach(c => { total += validateCredit(c.credit); }));
+            return total >= 100;
+        }
+    },
+    {
+        id: 'consistent',
+        emoji: '⚡',
+        name: 'Nhất quán',
+        desc: 'Tất cả học kỳ GPA ≥ 2.5',
+        check: () => data.length > 0 && data.every(sem => {
+            if (sem.courses.length === 0) return true;
+            let tp = 0, tc = 0;
+            sem.courses.forEach(c => { tp += calculateGpaScale4(c.finalScore) * validateCredit(c.credit); tc += validateCredit(c.credit); });
+            return tc > 0 && tp / tc >= 2.5;
+        })
+    },
+    {
+        id: 'perfect_score',
+        emoji: '🌟',
+        name: 'Đạt đỉnh',
+        desc: 'Có ≥1 môn điểm 10',
+        check: () => data.some(sem => sem.courses.some(c => validateScore(c.finalScore) === 10))
+    }
+];
+
+function evaluateBadges() {
+    const container = document.getElementById('badges-container');
+    if (!container) return;
+
+    container.innerHTML = BADGE_DEFINITIONS.map(badge => {
+        const earned = data.length > 0 && badge.check();
+        return `<div class="badge-item ${earned ? 'badge-earned' : 'badge-locked'}" title="${badge.desc}">
+            <span class="badge-emoji">${badge.emoji}</span>
+            <span class="badge-name">${badge.name}</span>
+        </div>`;
+    }).join('');
+}
+
+// ============================================================
+// SECTION: WHAT-IF GPA SIMULATOR
+// ============================================================
+let whatIfData = []; // [{name, credit, score}]
+let whatIfOpen = false;
+
+function toggleWhatIf() {
+    whatIfOpen = !whatIfOpen;
+    const body = document.getElementById('whatif-body');
+    const icon = document.getElementById('whatif-toggle-icon');
+    if (!body) return;
+    body.style.display = whatIfOpen ? 'block' : 'none';
+    if (icon) icon.textContent = whatIfOpen ? '▲' : '▼';
+    if (whatIfOpen && whatIfData.length === 0) addWhatIfRow();
+}
+
+function addWhatIfRow() {
+    const idx = whatIfData.length;
+    whatIfData.push({ name: '', credit: 3, score: 7 });
+    renderWhatIfTable();
+}
+
+function removeWhatIfRow(idx) {
+    whatIfData.splice(idx, 1);
+    renderWhatIfTable();
+    calculateWhatIfGPA();
+}
+
+function renderWhatIfTable() {
+    const tbody = document.getElementById('whatif-rows');
+    if (!tbody) return;
+
+    tbody.innerHTML = whatIfData.map((row, idx) => `
+        <tr>
+            <td><input type="text" value="${row.name}" placeholder="Tên môn..." oninput="whatIfData[${idx}].name=this.value"></td>
+            <td><input type="number" value="${row.credit}" min="1" max="10" style="width:55px;" oninput="whatIfData[${idx}].credit=parseInt(this.value)||3; calculateWhatIfGPA();"></td>
+            <td><input type="number" value="${row.score}" min="0" max="10" step="0.5" style="width:65px;" oninput="whatIfData[${idx}].score=parseFloat(this.value)||0; calculateWhatIfGPA();"></td>
+            <td><button onclick="removeWhatIfRow(${idx})" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:1rem;">✕</button></td>
+        </tr>
+    `).join('');
+
+    calculateWhatIfGPA();
+}
+
+function clearWhatIf() {
+    whatIfData = [];
+    renderWhatIfTable();
+    const result = document.getElementById('whatif-result');
+    if (result) result.style.display = 'none';
+}
+
+function calculateWhatIfGPA() {
+    const result = document.getElementById('whatif-result');
+    if (!result) return;
+
+    const validRows = whatIfData.filter(r => r.credit > 0);
+    if (validRows.length === 0) {
+        result.style.display = 'none';
+        return;
+    }
+
+    // GPA thực tế hiện tại
+    let realPts = 0, realCr = 0;
+    data.forEach(sem => sem.courses.forEach(c => {
+        const cr = validateCredit(c.credit);
+        realPts += calculateGpaScale4(c.finalScore) * cr;
+        realCr += cr;
+    }));
+    const currentGPA = realCr > 0 ? realPts / realCr : 0;
+
+    // GPA dự kiến
+    let projPts = realPts, projCr = realCr;
+    validRows.forEach(r => {
+        const cr = parseInt(r.credit) || 3;
+        const gp4 = calculateGpaScale4(parseFloat(r.score) || 0);
+        projPts += gp4 * cr;
+        projCr += cr;
+    });
+    const projGPA = projCr > 0 ? projPts / projCr : 0;
+    const delta = projGPA - currentGPA;
+
+    document.getElementById('wi-current-gpa').textContent = currentGPA.toFixed(2);
+    const projElem = document.getElementById('wi-projected-gpa');
+    projElem.textContent = projGPA.toFixed(2);
+
+    const deltaElem = document.getElementById('wi-delta');
+    const sign = delta > 0 ? '+' : '';
+    deltaElem.textContent = `${sign}${delta.toFixed(2)}`;
+    deltaElem.className = delta > 0.005 ? 'delta-positive' : delta < -0.005 ? 'delta-negative' : 'delta-neutral';
+
+    result.style.display = 'grid';
+}
