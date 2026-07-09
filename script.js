@@ -1090,12 +1090,13 @@ async function submitImport() {
                 trs.forEach(tr => {
                     const tds = tr.querySelectorAll('td, th');
                     const text = tr.textContent.trim();
+                    const isSemesterMatch = /HK\s*\d+/i.test(text) || /Học kỳ/i.test(text);
                     
-                    // Dòng chứa tên học kỳ (Thường có class 'row-head', 'title-hk-diem' hoặc chỉ có 1 cột chứa chữ 'Học kỳ')
+                    // Dòng chứa tên học kỳ (Thường có class 'row-head', 'title-hk-diem' hoặc chỉ có 1 cột chứa chữ 'HK' hoặc 'Học kỳ')
                     const isSemesterRow = tr.classList.contains('row-head') || 
                                           tr.classList.contains('title-hk-diem') || 
                                           tr.classList.contains('title-hk') ||
-                                          (tds.length === 1 && text.toLowerCase().includes('học kỳ'));
+                                          (tds.length === 1 && isSemesterMatch);
 
                     if (isSemesterRow) {
                         currentSem = {
