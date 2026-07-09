@@ -3,10 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Công cụ tính GPA</title>
+    <title>Công cụ tính GPA HUIT</title>
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="Công cụ tính GPA HUIT">
+    <meta property="og:description" content="Theo dõi điểm trung bình học kỳ, tổng thể và biểu đồ xu hướng GPA của bạn. Tự động tải điểm từ hệ thống HUIT.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/huit/gpa/main/140.png">
+    <meta property="og:url" content="https://huit-gpa-calculator.vercel.app/">
+    <meta property="og:type" content="website">
+    
     <link rel="stylesheet" href="style.css">
     <link rel="icon" href="Logo HUIT-01.ico">
     <link rel="stylesheet" href="responsive.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
@@ -92,6 +100,11 @@
                         </tr>
                     </table>
                 </div>
+                
+                <div class="chart-container" style="margin-top: 25px;">
+                    <h3>Xu hướng GPA</h3>
+                    <canvas id="gpaTrendChart"></canvas>
+                </div>
             </div>
         </div>
         
@@ -120,27 +133,58 @@
 
         <!-- Modal Tự động tải điểm -->
         <div id="import-modal" class="modal">
-            <div class="modal-content">
+            <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
                 <span class="close-modal" onclick="closeImportModal()">&times;</span>
                 <h2 style="color: var(--secondary); margin-bottom: 20px;">Tự động lấy điểm HUIT</h2>
                 <p style="margin-bottom: 15px; color: var(--gray); font-size: 0.9rem;">
-                    Nhập mã số sinh viên và mã Captcha để lấy thông tin điểm các học kỳ tự động.
+                    Vui lòng nhập đầy đủ thông tin để hệ thống có thể tra cứu điểm của bạn.
                 </p>
-                <div class="form-group">
-                    <label for="import-mssv">Mã số sinh viên (MSSV)</label>
-                    <input type="text" id="import-mssv" class="course-input" placeholder="Ví dụ: 200121... " required>
-                </div>
-                <div class="form-group captcha-group">
-                    <label for="import-captcha">Mã Captcha</label>
-                    <div class="captcha-container">
-                        <input type="text" id="import-captcha" class="course-input" placeholder="Nhập mã Captcha..." required>
-                        <img id="captcha-img" src="" alt="Captcha Image" onclick="refreshCaptcha()" title="Bấm để tải lại Captcha">
+                
+                <div id="import-error-message" style="display: none; color: #e74c3c; background-color: #fadbd8; padding: 10px; border-radius: 6px; margin-bottom: 15px; font-size: 0.9rem; text-align: center;"></div>
+                
+                <div id="import-form-container">
+                    <div class="form-group">
+                        <label for="import-mssv">Mã số sinh viên (MSSV)</label>
+                        <input type="text" id="import-mssv" class="course-input" placeholder="Ví dụ: 200121... " required>
+                    </div>
+                    <div class="form-group">
+                        <label for="import-name">Họ và tên</label>
+                        <input type="text" id="import-name" class="course-input" placeholder="Nhập họ và tên..." required>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label for="import-dob">Ngày sinh (DD/MM/YYYY)</label>
+                            <input type="text" id="import-dob" class="course-input" placeholder="Ví dụ: 01/01/2003" required>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label for="import-class">Lớp học</label>
+                            <input type="text" id="import-class" class="course-input" placeholder="Ví dụ: 15DHTH01" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="import-idcard">Số CCCD / CMND</label>
+                        <input type="text" id="import-idcard" class="course-input" placeholder="Nhập CCCD..." required>
+                    </div>
+                    <div class="form-group captcha-group">
+                        <label for="import-captcha">Mã Captcha</label>
+                        <div class="captcha-container">
+                            <input type="text" id="import-captcha" class="course-input" placeholder="Nhập mã Captcha..." required>
+                            <img id="captcha-img" src="" alt="Captcha Image" onclick="refreshCaptcha()" title="Bấm để tải lại Captcha">
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-primary" onclick="submitImport()" style="width: 100%;" id="btn-submit-import">
+                            <span class="btn-icon">🔄</span> Tải Dữ Liệu
+                        </button>
                     </div>
                 </div>
-                <div class="modal-actions">
-                    <button class="btn btn-primary" onclick="submitImport()" style="width: 100%;">
-                        <span class="btn-icon">🔄</span> Tải Dữ Liệu
-                    </button>
+
+                <div id="import-loading-container" style="display: none; text-align: center; padding: 20px 0;">
+                    <div class="loader" style="margin: 0 auto 15px;"></div>
+                    <p id="import-loading-status" style="font-weight: 500; color: var(--primary);">Đang khởi tạo kết nối...</p>
+                    <div class="progress-bar-bg" style="width: 100%; height: 8px; background-color: #eee; border-radius: 4px; margin-top: 15px; overflow: hidden;">
+                        <div id="import-progress-bar" style="height: 100%; width: 0%; background-color: var(--primary); transition: width 0.3s ease;"></div>
+                    </div>
                 </div>
             </div>
         </div>

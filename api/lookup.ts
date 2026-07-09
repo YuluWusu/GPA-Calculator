@@ -11,12 +11,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(405).json({ success: false, error: 'Method not allowed' });
     }
     
-    const { studentId, captcha, token, ncforminfo, cookies: reqCookies } = req.body;
+    const { studentId, studentName, dob, classId, idCard, captcha, token, ncforminfo, cookies: reqCookies } = req.body;
     
-    if (!studentId || !captcha || !token || !ncforminfo) {
+    if (!studentId || !studentName || !dob || !classId || !idCard || !captcha || !token || !ncforminfo) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Thiếu thông tin tra cứu' 
+        error: 'Thiếu thông tin tra cứu (MSSV, Họ tên, Ngày sinh, Lớp, CCCD hoặc Captcha)' 
       });
     }
     
@@ -27,10 +27,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Tạo form data
     const formData = new Map<string, string>([
       ['MaSinhVien', studentId as string],
-      ['HoTen', ''],
-      ['NgaySinh', ''],
-      ['LopHoc', ''],
-      ['SoCMND', ''],
+      ['HoTen', studentName as string],
+      ['NgaySinh', dob as string],
+      ['LopHoc', classId as string],
+      ['SoCMND', idCard as string],
       ['Captcha', captcha as string],
       ['__RequestVerificationToken', token as string],
       ['__ncforminfo', ncforminfo as string]
@@ -62,16 +62,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Kiểm tra nếu là JSON (lỗi)
     try {
       const json = JSON.parse(text);
-      if (json.Errors) {
+      if (json.Errors || json.Message) {
         return res.status(400).json({ 
           success: false, 
-          error: json.Errors.Captcha?.errors?.[0] || 
-                 json.Errors.MaSinhVien?.errors?.[0] || 
-                 json.Message || 'Lỗi tra cứu' 
+          error: 'Thông tin sinh viên hoặc mã xác nhận không chính xác. Vui lòng kiểm tra lại.' 
         });
-      }
-      if (json.Message) {
-        return res.status(400).json({ success: false, error: json.Message });
       }
     } catch {
       // Không phải JSON, tiếp tục parse HTML

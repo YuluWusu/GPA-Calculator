@@ -627,6 +627,10 @@ function updateSummary() {
     if (totalCreditsElem) totalCreditsElem.textContent = formatNumber(totalCredits, true);
 
     updateOverallInfo();
+    
+    if (typeof renderChart === 'function') {
+        renderChart();
+    }
 }
 
 // HÀM RENDER QUAN TRỌNG - ĐÃ FIX ĐẦY ĐỦ
@@ -983,7 +987,16 @@ function closeImportModal() {
     if (modal) {
         modal.style.display = 'none';
         document.getElementById('import-mssv').value = '';
+        document.getElementById('import-name').value = '';
+        document.getElementById('import-dob').value = '';
+        document.getElementById('import-class').value = '';
+        document.getElementById('import-idcard').value = '';
         document.getElementById('import-captcha').value = '';
+        document.getElementById('import-error-message').style.display = 'none';
+        
+        // Reset view state
+        document.getElementById('import-form-container').style.display = 'block';
+        document.getElementById('import-loading-container').style.display = 'none';
     }
 }
 
@@ -1019,22 +1032,33 @@ async function refreshCaptcha() {
 }
 
 async function submitImport() {
-    const mssv = document.getElementById('import-mssv').value;
-    const captchaInput = document.getElementById('import-captcha').value;
+    const mssv = document.getElementById('import-mssv').value.trim();
+    const name = document.getElementById('import-name').value.trim();
+    const dob = document.getElementById('import-dob').value.trim();
+    const classId = document.getElementById('import-class').value.trim();
+    const idCard = document.getElementById('import-idcard').value.trim();
+    const captchaInput = document.getElementById('import-captcha').value.trim();
+    const errorMsg = document.getElementById('import-error-message');
 
-    if (!mssv) {
-        alert("Vui lòng nhập Mã số sinh viên!");
+    if (!mssv || !name || !dob || !classId || !idCard || !captchaInput) {
+        errorMsg.textContent = "Vui lòng nhập đầy đủ tất cả thông tin!";
+        errorMsg.style.display = 'block';
         return;
     }
-    if (!captchaInput) {
-        alert("Vui lòng nhập Mã Captcha!");
-        return;
-    }
+    
+    errorMsg.style.display = 'none';
 
-    const btn = document.querySelector('.modal-actions .btn');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="btn-icon">⏳</span> Đang xử lý...';
-    btn.disabled = true;
+    // Đổi giao diện sang trạng thái Loading
+    const formContainer = document.getElementById('import-form-container');
+    const loadingContainer = document.getElementById('import-loading-container');
+    const statusText = document.getElementById('import-loading-status');
+    const progressBar = document.getElementById('import-progress-bar');
+    
+    formContainer.style.display = 'none';
+    loadingContainer.style.display = 'block';
+    
+    statusText.textContent = "Đang xác thực thông tin sinh viên...";
+    progressBar.style.width = '20%';
 
     if (useRealAPI) {
         try {
@@ -1043,6 +1067,10 @@ async function submitImport() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     studentId: mssv,
+                    studentName: name,
+                    dob: dob,
+                    classId: classId,
+                    idCard: idCard,
                     captcha: captchaInput,
                     token: apiContext.token,
                     ncforminfo: apiContext.ncforminfo,
@@ -1052,12 +1080,16 @@ async function submitImport() {
             const lookupData = await lookupRes.json();
 
             if (!lookupData.success) {
-                alert("Lỗi: " + (lookupData.error || "Mã captcha không đúng hoặc lỗi hệ thống"));
-                btn.innerHTML = originalText;
-                btn.disabled = false;
+                errorMsg.textContent = lookupData.error || "Thông tin không chính xác. Vui lòng kiểm tra lại.";
+                errorMsg.style.display = 'block';
+                formContainer.style.display = 'block';
+                loadingContainer.style.display = 'none';
                 refreshCaptcha();
                 return;
             }
+
+            statusText.textContent = "Đang tải bảng điểm từ hệ thống HUIT...";
+            progressBar.style.width = '60%';
 
             const gradesRes = await fetch('/api/grades', {
                 method: 'POST',
@@ -1070,16 +1102,18 @@ async function submitImport() {
 
             const gradesData = await gradesRes.json();
             if (gradesData.success) {
-                console.log("Đang bóc tách dữ liệu HTML...");
+                statusText.textContent = "Đang bóc tách dữ liệu...";
+                progressBar.style.width = '90%';
                 
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(gradesData.html, 'text/html');
                 
                 const table = doc.getElementById('xemDiem');
                 if (!table) {
-                    alert("Lỗi: Không tìm thấy bảng điểm trong dữ liệu trả về từ HUIT.");
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
+                    errorMsg.textContent = "Lỗi: Không tìm thấy bảng điểm trong dữ liệu trả về từ HUIT.";
+                    errorMsg.style.display = 'block';
+                    formContainer.style.display = 'block';
+                    loadingContainer.style.display = 'none';
                     return;
                 }
 
@@ -1123,27 +1157,47 @@ async function submitImport() {
                         const creditStr = creditTd.textContent.trim();
                         const credit = parseInt(creditStr);
                         
-                        // Bỏ qua các dòng không phải là môn học hợp lệ (như dòng tính tổng, hoặc tín chỉ 0)
-                        if (isNaN(credit) || credit === 0 || courseName.toLowerCase().includes("điểm trung bình")) return;
+                        // Loại bỏ môn Thể chất, Giáo dục Quốc phòng, các dòng tính tổng hoặc tín chỉ 0
+                        const lowerName = courseName.toLowerCase();
+                        if (isNaN(credit) || credit === 0 || 
+                            lowerName.includes("điểm trung bình") ||
+                            lowerName.includes("thể chất") ||
+                            lowerName.includes("quốc phòng")) return;
 
                         let qt = 0, ck = 0, final = 0;
-                        if (qtTd) qt = parseFloat(qtTd.textContent.trim().replace(',', '.')) || 0;
-                        if (ckTd) ck = parseFloat(ckTd.textContent.trim().replace(',', '.')) || 0;
-                        if (finalTd) final = parseFloat(finalTd.textContent.trim().replace(',', '.')) || 0;
+                        let hasQt = qtTd && qtTd.textContent.trim() !== '';
+                        let hasCk = ckTd && ckTd.textContent.trim() !== '';
+                        let hasFinal = finalTd && finalTd.textContent.trim() !== '';
+                        
+                        if (hasQt) qt = parseFloat(qtTd.textContent.trim().replace(',', '.')) || 0;
+                        if (hasCk) ck = parseFloat(ckTd.textContent.trim().replace(',', '.')) || 0;
+                        if (hasFinal) final = parseFloat(finalTd.textContent.trim().replace(',', '.')) || 0;
 
                         // Tìm trọng số (w_qt, w_ck) phù hợp nhất với DiemTongKet của trường
                         let bestWQt = 30; // Mặc định 30% QT, 70% CK
-                        let minDiff = 999;
                         
-                        // Thử các trọng số QT phổ biến: 10, 20, 30, 40, 50
-                        [10, 20, 30, 40, 50].forEach(testW => {
-                            const calculatedFinal = (qt * testW + ck * (100 - testW)) / 100;
-                            const diff = Math.abs(Math.round(calculatedFinal * 10) / 10 - final);
-                            if (diff < minDiff) {
-                                minDiff = diff;
-                                bestWQt = testW;
-                            }
-                        });
+                        // Nếu là môn thực hành (chỉ có điểm thi/cuối kỳ)
+                        if (!hasQt && hasCk) {
+                            bestWQt = 0; // 0% quá trình, 100% cuối kỳ
+                            qt = ck;     // Hiển thị tạm điểm thi sang quá trình để UI không bị rối, hoặc để 0
+                        }
+                        // Nếu chỉ có điểm quá trình
+                        else if (hasQt && !hasCk) {
+                            bestWQt = 100; // 100% quá trình, 0% cuối kỳ
+                            ck = qt;
+                        } 
+                        else {
+                            let minDiff = 999;
+                            // Thử các trọng số QT phổ biến: 10, 20, 30, 40, 50
+                            [10, 20, 30, 40, 50].forEach(testW => {
+                                const calculatedFinal = (qt * testW + ck * (100 - testW)) / 100;
+                                const diff = Math.abs(Math.round(calculatedFinal * 10) / 10 - final);
+                                if (diff < minDiff) {
+                                    minDiff = diff;
+                                    bestWQt = testW;
+                                }
+                            });
+                        }
 
                         currentSem.courses.push({
                             name: courseName,
@@ -1158,32 +1212,36 @@ async function submitImport() {
                 });
 
                 if (newSemesters.length > 0) {
+                    progressBar.style.width = '100%';
                     data = newSemesters;
                     saveData();
                     render();
                     
-                    alert(`Tải thành công ${newSemesters.length} học kỳ!`);
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    closeImportModal();
+                    setTimeout(() => {
+                        alert(`Tải thành công ${newSemesters.length} học kỳ!`);
+                        closeImportModal();
+                    }, 300);
                 } else {
-                    alert("Không tìm thấy dữ liệu học kỳ/môn học nào trong bảng điểm của bạn.");
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
+                    errorMsg.textContent = "Không tìm thấy dữ liệu học kỳ/môn học nào hợp lệ trong bảng điểm.";
+                    errorMsg.style.display = 'block';
+                    formContainer.style.display = 'block';
+                    loadingContainer.style.display = 'none';
                 }
             } else {
                 throw new Error("Không thể tải bảng điểm");
             }
         } catch (e) {
             console.error(e);
-            alert("Lỗi khi kết nối API thật. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.");
-            btn.innerHTML = originalText;
-            btn.disabled = false;
+            errorMsg.textContent = "Lỗi kết nối. Vui lòng thử lại sau.";
+            errorMsg.style.display = 'block';
+            formContainer.style.display = 'block';
+            loadingContainer.style.display = 'none';
         }
     } else {
-        alert("Lỗi: Không thể kết nối đến server lấy điểm. Xin vui lòng triển khai hệ thống (deploy) trước khi sử dụng tính năng này!");
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+        errorMsg.textContent = "Hệ thống đang chạy offline, không thể tra cứu tự động.";
+        errorMsg.style.display = 'block';
+        formContainer.style.display = 'block';
+        loadingContainer.style.display = 'none';
     }
 }
 
@@ -1197,4 +1255,82 @@ window.onclick = function (event) {
     if (event.target == welcomeModal) {
         closeWelcomeModal();
     }
+}
+
+// ---------------- GPA CHART ---------------- //
+let gpaChart = null;
+
+function renderChart() {
+    const ctx = document.getElementById('gpaTrendChart');
+    if (!ctx) return;
+    
+    // Nếu chưa có dữ liệu hoặc chart.js chưa tải
+    if (!data || data.length === 0 || typeof Chart === 'undefined') {
+        if(gpaChart) {
+            gpaChart.destroy();
+            gpaChart = null;
+        }
+        return;
+    }
+
+    // Lấy nhãn (tên học kỳ) và dữ liệu (gpa)
+    const labels = data.map(sem => sem.name);
+    const gpaData = data.map(sem => {
+        let totalSemGpa = 0;
+        let totalSemCredits = 0;
+        sem.courses.forEach(c => {
+            if (c.finalScore >= 0) {
+                totalSemGpa += calculateGpaScale4(c.finalScore) * c.credit;
+                totalSemCredits += c.credit;
+            }
+        });
+        return totalSemCredits > 0 ? (totalSemGpa / totalSemCredits).toFixed(2) : 0;
+    });
+
+    if (gpaChart) {
+        gpaChart.destroy();
+    }
+
+    gpaChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'GPA Học Kỳ (Hệ 4.0)',
+                data: gpaData,
+                borderColor: '#8338ec',
+                backgroundColor: 'rgba(131, 56, 236, 0.1)',
+                borderWidth: 3,
+                pointBackgroundColor: '#8338ec',
+                pointRadius: 5,
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    min: 0,
+                    max: 4,
+                    ticks: {
+                        stepSize: 0.5
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `GPA: ${context.parsed.y}`;
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
